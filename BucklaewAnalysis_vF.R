@@ -3,12 +3,13 @@
 #Amy Bucklaew & Ned A. Dochtermann
 
 #Requires data=BucklaewData2018, available as "BucklaewData2018.csv"
+#
 library(MCMCglmm); library(lme4); library(rptR);library(lmerTest)
 
 #### Misc Functions ####
 #Calculating repeatabilities with fixed effects variances
 #and distribution specific variances in denominator.
-#The two functions below calculate these variances.
+#The functions below calculate these variances.
 fixed.var<-function(mod=model){
   vmVarF<-numeric(1000)
   for(i in 1:1000){
@@ -24,6 +25,18 @@ Pois.win.var<-function(mod=model,with.var=2){
   omega<-mod$VCV[,with.var]
   tot.win.var<-as.mcmc(omega+dist.var)
 }
+
+Bin.win.var <- function(mod=model,with.var=2){
+  dist.var<-(pi^2)/3
+  omega<-mod$VCV[,with.var]
+  tot.win.var<-as.mcmc(omega+dist.var)
+}
+
+#### Scale fixed effects & reorder factors so "Pre" is the index factor ####
+BucklaewData2018$TempSCALED <- scale(BucklaewData2018$Temp)
+BucklaewData2018$MassSCALED <- scale(BucklaewData2018$Mass)
+BucklaewData2018$Exp <- as.factor(BucklaewData2018$Exp)
+BucklaewData2018$Exp <- factor(BucklaewData2018$Exp,levels(BucklaewData2018$Exp)[c(2,1)])
 
 #### MCMC evaluation of difference in repeatability by behav type ####
 #MCMC Chain & Prior Specification
@@ -200,7 +213,29 @@ HPDinterval(Vw.Lat)
 HPDinterval(Vi.Lat/(Vi.Lat+Vf.Lat+Vw.Lat))
 
 #### Plotting ####
+
+#create tables for plotting
+Dist.ef <- matrix(c(posterior.mode(Dist3.mcmc$Sol[,1]),posterior.mode(Dist3.mcmc$Sol[,1]+Dist3.mcmc$Sol[,2]),
+                    median(Dist3.mcmc$Sol[,1]),median(Dist3.mcmc$Sol[,1]+Dist3.mcmc$Sol[,2]),
+                    HPDinterval(Dist3.mcmc$Sol[,1])[1],HPDinterval(Dist3.mcmc$Sol[,1]+Dist3.mcmc$Sol[,2])[1],            
+                    HPDinterval(Dist3.mcmc$Sol[,1])[2],HPDinterval(Dist3.mcmc$Sol[,1]+Dist3.mcmc$Sol[,2])[2]),2,4) 
+
+UZ.ef <- matrix(c(posterior.mode(UZ2.mcmc$Sol[,1]),posterior.mode(UZ2.mcmc$Sol[,1]+UZ2.mcmc$Sol[,2]),
+                    median(UZ2.mcmc$Sol[,1]),median(UZ2.mcmc$Sol[,1]+UZ2.mcmc$Sol[,2]),
+                    HPDinterval(UZ2.mcmc$Sol[,1])[1],HPDinterval(UZ2.mcmc$Sol[,1]+UZ2.mcmc$Sol[,2])[1],            
+                    HPDinterval(UZ2.mcmc$Sol[,1])[2],HPDinterval(UZ2.mcmc$Sol[,1]+UZ2.mcmc$Sol[,2])[2]),2,4) 
+
+
+#because MCMCglmm fits fixed effects in a different way for categorical, 
+#coefficients aren't directly convertable using plogis
+#instead, plot effects and 95%CI's with effects package from a glmer fitted model
+#(direction and significance of effects are the same, regardless of fitting method)
+m.lat <- glmer(LatBi~-1+Exp+TempSCALED+MassSCALED+Exp:TempSCALED+Exp:MassSCALED+(Exp|ID),family=binomial,data=BucklaewData2018)
+lat.95 <- confint(m.lat,parm="beta_")
+lat.ef <- plogis(cbind(fixef(m.lat)[1:2],lat.95[1:2,]))#convert to probability
+
 #Figure 1
+#tiff('F1.tiff',width=8,height=10,units='in',res=600)
 par(mfrow=c(3,1),pty='s',mar=c(1,1,1,1)+.01,oma=c(3,0,0,0))
 plot(NA, xaxt="n",xlab="",ylab="Distance (cm)",
      xlim=c(0.75,2.25), ylim=c(floor(min(Dist.ef[,4])),ceiling(max(Dist.ef[,5]))),
@@ -209,7 +244,7 @@ arrows(1:2,Dist.ef[,4],1:2,Dist.ef[,5],length=.1,angle=90,code=3)
 lines(c(1,2),Dist.ef[,2],lty=2)
 points(c(1,2),Dist.ef[,2],cex=3,pch=21,bg='white')
 axis(1, at=c(1,2),labels=F)
-mtext("A",side=2,line=4.5,padj=-5.1,cex=1.5,las=2)
+mtext("A",side=2,line=4.5,padj=-7,cex=1.5,las=2)
 
 plot(NA, xaxt="n",xlab="",ylab="Unique Zones Visited",
      xlim=c(0.75,2.25),ylim=c(floor(min(UZ.ef[,4])),ceiling(max(UZ.ef[,5]))),
@@ -218,20 +253,21 @@ arrows(1:2,UZ.ef[,4],1:2,UZ.ef[,5],length=.1,angle=90,code=3)
 lines(c(1,2),UZ.ef[,2],lty=2)
 points(c(1,2),UZ.ef[,2],cex=3,pch=21,bg='white')
 axis(1, at=c(1,2),labels=F)
-mtext("B",side=2,line=4.5,padj=-5.1,cex=1.5,las=2)
+mtext("B",side=2,line=4.5,padj=-7,cex=1.5,las=2)
 
 plot(NA, xaxt="n",xlab="",ylab="Emergence (proportion)",
      xlim=c(0.75,2.25),ylim=c(0,1),
      cex.axis=1.25,cex.lab=1.5)
-arrows(1:2,lat.ef[,4],1:2,lat.ef[,5],length=.1,angle=90,code=3)
-lines(c(1,2),lat.ef[,2],lty=2)
-points(c(1,2),lat.ef[,2],cex=3,pch=21,bg='white')
+arrows(1:2,lat.ef[,2],1:2,lat.ef[,3],length=.1,angle=90,code=3)
+lines(c(1,2),lat.ef[,1],lty=2)
+points(c(1,2),lat.ef[,1],cex=3,pch=21,bg='white')
 axis(1, at=c(1,2),labels=c("Pre-Exposure","Post-Exposure"),cex.axis=1.5)
-mtext("C",side=2,line=4.5,padj=-5.1,cex=1.5,las=2)
+mtext("C",side=2,line=4.5,padj=-7,cex=1.5,las=2)
+#dev.off()
 
 #### Supplemental post-hoc analysis (see Response to Reviewers) ####
 # Calculate delta-V per:
-# Royauté, R., and N. A. Dochtermann. 2020. 
+# RoyautÃ©, R., and N. A. Dochtermann. 2020. 
 # Comparing ecological and evolutionary variability within datasets.  
 # ecoevorxiv.org doi:10.32942/osf.io/tn7u5
 # https://ecoevorxiv.org/tn7u5/
@@ -241,8 +277,10 @@ Dist_Vi_diff <- Dist4.mcmc$VCV[,1]-Dist4.mcmc$VCV[,2]
 Dist_Vw_diff <- Dist4.mcmc$VCV[,3]-Dist4.mcmc$VCV[,4]
 posterior.mode(Dist_Vi_diff); posterior.mode(Dist_Vw_diff)
 sum(Dist_Vi_diff<0); sum(Dist_Vw_diff<0)
-#Model comparison demonstrated support for Vw differing between
-#pre- and post-exposure. This was supported in 988 of 1000 posterior estimates (strong support)
+#Model comparison demonstrated support for Vi & Vw differing between
+#pre- and post-exposure. This was supported in 988 of 1000 posterior estimates for Vw (very strong support)
+#and 884/1000 for Vi
+
 
 #Unique Zones
 UZ_Vi_diff <- UZ4.mcmc$VCV[,1]-UZ4.mcmc$VCV[,2]
@@ -258,4 +296,4 @@ Lat_Vw_diff <- Lat4.mcmc$VCV[,3]-Lat4.mcmc$VCV[,4]
 posterior.mode(Lat_Vi_diff); posterior.mode(Lat_Vw_diff)
 sum(Lat_Vi_diff<0); sum(Lat_Vw_diff>0)
 #Model comparison demonstrated weak support for Vi differeing between
-#pre- and post-exposure. This difference was supported in 915 of 1000 posterior estimates (moderate support)
+#pre- and post-exposure. This difference was supported in 905 of 1000 posterior estimates (moderate support)
